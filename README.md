@@ -49,6 +49,49 @@
 （不相关时向量分仍有 0.61，trigram 直接是 0），加权相加没有稳定区间；名次是无量纲的，
 天然可比。代价是丢掉"第 1 名比第 2 名好多少"的信息，这个由精排补回来。
 
+## Agent 工具调用（/agent）
+
+`/ask` 是固定流程：检索一定会发生，模型没有选择权。`/agent` 把选择权交还给模型 ——
+它自己决定要不要查知识库、要不要算数、还是直接回答。**有没有由模型做出的选择，就是 RAG 和 Agent 的分界线。**
+
+暴露三个工具（`KnowledgeBaseTools`）：
+
+| 工具 | 作用 |
+|---|---|
+| `searchKnowledgeBase` | 把整条检索链路（混合召回 → RRF → 精排 → 双闸门）包成一个工具 |
+| `calculator` | 四则运算，自己写的递归下降求值器 |
+| `currentTime` | 服务器当前时间 |
+
+后两个工具本身没有技术含量，它们的作用是**证明工具选择确实由模型做出**：问"现在几点"，
+模型知道该调 `currentTime` 而不是硬编一个时间，说明这条链路是活的。
+
+循环是手写的（`AgentService`），没用 `AiServices` 注解那套，理由是可控制、可观测：
+
+~~~
+user → assistant(要求调用工具) → tool(结果) → assistant(最终回答)
+~~~
+
+四个必须自己处理的地方：
+
+1. **assistant 那条消息必须回填进历史**。不回填的话，下一轮模型看不到自己要求过什么工具，
+   OpenAI 兼容接口会直接报错 —— 这是手写循环最容易漏的一步。
+2. **轮次上限**（`agent.max-rounds`，默认 5）。防的是模型反复调同一个工具：既烧 token，
+   又让请求迟迟不返回。
+3. **上限用尽不直接报错**，而是把工具摘掉再问一次，逼模型用已经拿到的信息收尾 ——
+   它此时手里其实已经有资料了，回一句"达到上限"对用户毫无价值。
+4. **工具异常一律转成文字回填**，不让它打断整轮对话；连"模型喊了一个不存在的工具"也回填
+   可用工具清单，让模型自己纠正。工具参数是不可信输入（可能为 null、可能不是合法 JSON、
+   可能少传字段），同样翻成文字回填。
+
+~~~bash
+curl "http://localhost:8081/agent?question=RAG%20是什么"
+# {"answer":"...","toolCalls":[{"name":"searchKnowledgeBase","arguments":"...","result":"..."}],
+#  "rounds":2,"maxRoundsReached":false}
+~~~
+
+返回体里带 `toolCalls` 是为了让"模型到底调没调工具"可见：只看最终答案的话，你分不清它是
+查了知识库还是自己编的 —— 这两者在用户眼里一模一样，在排障时却是天壤之别。
+
 ## 快速开始
 
 前置：JDK 17、Maven、Docker Desktop。
@@ -76,7 +119,8 @@ pg_trgm 扩展与 GIN 索引由 `PgTrgmInitializer` 在启动时自动创建，�
 |---|---|---|
 | GET | `/chat?message=` | 不检索，直连大模型（最小闭环，也用来验证密钥通不通） |
 | POST | `/upload` | multipart 上传 `.txt`/`.md`；可选 `overwrite=true` 覆盖同名新版本 |
-| GET | `/ask?question=` | RAG 问答，返回 `answer` / `retrieved` / `sources` / `rerankUsed` |
+| GET | `/ask?question=` | RAG 问答（固定流程），返回 `answer` / `retrieved` / `sources` / `rerankUsed` |
+| GET | `/agent?question=` | Agent 入口（模型自选工具），返回 `answer` / `toolCalls` / `rounds` / `maxRoundsReached` |
 | GET | `/documents` | 列出已入库文档（文件名 / 内容哈希 / 段数） |
 | DELETE | `/documents?filename=` | 删除该文档的全部片段 |
 | GET | `/eval` | 跑 20 条用例的检索评测，返回四指标 + 逐条明细 + 生效配置回显 |
@@ -130,12 +174,15 @@ curl http://localhost:8081/eval
 mvn test
 ~~~
 
-12 个单元测试，覆盖三处最容易改坏、而且**改坏了不会报错**的地方：
+25 个单元测试，覆盖三处最容易改坏、而且**改坏了不会报错**的地方：
 
 - `RetrievalServiceTest`（8 个）：RRF 融合与去重身份、精排阈值过滤、
   **精排服务异常时的降级**（不能拿 null 分数去过滤，否则候选会被整批清空）、
   纯向量基线路径、finalTopK 截断。
 - `DocumentServiceTest`（4 个）：内容级去重、同名冲突默认拒绝、`overwrite=true` 先删后写、全新文档入库。
+- `AgentServiceTest`（5 个）：消息回填顺序（少了 assistant 那条接口会报错）、轮次上限与强制收尾、
+  工具异常兜底、未知工具兜底。
+- `KnowledgeBaseToolsTest`（5 个）+ `ArithmeticEvaluatorTest`（3 个）：工具层参数解析与求值器边界。
 
 `RagAgentApplicationTests`（整体容器启动）标了 `@Disabled`：它需要本地 pgvector，
 不应该拖累 `mvn test`，要跑就先去 `docker compose up -d` 再摘掉注解。
@@ -157,11 +204,18 @@ src/main/java/com/ragagent/
 │   ├── DocumentController.java    /upload（只做协议与校验）
 │   ├── DocumentAdminController.java /documents 列表与删除
 │   ├── AskController.java         /ask（只做调检索 + 拼 prompt）
+│   ├── AgentController.java       /agent 入口，回显工具调用轨迹
 │   └── EvalController.java        /eval 评测用例与指标计算
 ├── service/
 │   ├── DocumentService.java       入库幂等、按文档删除、列出文档
 │   ├── RetrievalService.java      混合召回 → RRF → 精排 → 双闸门
+│   ├── AgentService.java          Agent 主循环：工具调用 → 回填 → 再问，含轮次上限
 │   └── RerankClient.java          硅基流动 rerank 客户端
+├── agent/
+│   ├── AgentTool.java             工具 = 给模型看的规格 + 真正干活的实现
+│   ├── AgentResult.java           回答 + 工具调用轨迹 + 轮次
+│   ├── KnowledgeBaseTools.java    三个工具的定义：知识库检索 / 计算 / 时间
+│   └── ArithmeticEvaluator.java   递归下降四则运算求值器（不用脚本引擎）
 └── rag/
     ├── KeywordSearcher.java       pg_trgm 关键词通道
     ├── RetrievedSegment.java      四路分数（vector/keyword/rrf/rerank）
@@ -180,7 +234,7 @@ src/main/java/com/ragagent/
 - [x] M2 RAG（`/upload` 切块入库、`/ask` 检索问答、`/documents` 管理）
 - [x] M2.5 检索质量增强（混合召回 + RRF + 精排 + 双闸门拒答 + `/eval` 消融评测）
 - [ ] M3 多轮对话（会话历史 + 指代消解式 query 改写）
-- [ ] M4 Agent 工具调用（ToolSpecification / Function Calling）
+- [x] M4 Agent 工具调用（ToolSpecification，手写 tool-execution 循环）
 - [ ] M5 答案引用溯源 + 忠实度校验
 - [ ] M6 PDF 解析、异步入库、向量索引（HNSW）、SSE 流式输出、部署
 
