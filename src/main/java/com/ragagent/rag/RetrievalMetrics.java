@@ -15,7 +15,7 @@ import java.util.List;
  *   nDCG@k           —— DCG/IDCG。DCG = Σ (2^rel - 1) / log2(i + 1)，
  *                       单相关文档、理想排序是它排第 1，所以 IDCG = 1，
  *                       于是 nDCG@k 退化成 1 / log2(rank + 1)。
- *                       加它主要是因为"nDCG 涨了多少"是面试里的标准问法，口径得对得上。
+ *                       加它主要是因为"nDCG 涨了多少"最常被拿来横比方案优劣，口径得对得上。
  */
 public final class RetrievalMetrics {
 
