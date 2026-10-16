@@ -1,0 +1,19 @@
+# rag-agent 的基础设施：PostgreSQL + pgvector（向量数据库）
+# 启动命令：docker compose up -d
+# 停止命令：docker compose down（加 -v 会连数据一起删，慎用）
+services:
+  postgres:
+    image: pgvector/pgvector:pg17      # PostgreSQL 17 官方镜像 + 内置 pgvector 向量扩展
+    container_name: rag-pgvector
+    restart: unless-stopped             # 开机/崩溃自动重启，但不强制覆盖手动停止
+    environment:
+      POSTGRES_USER: ragagent           # 数据库用户名
+      POSTGRES_PASSWORD: ragagent123    # 数据库密码（本地开发用，不上生产）
+      POSTGRES_DB: ragdb                # 默认建好的数据库名
+    ports:
+      - "5433:5432"                     # 宿主机 5433 -> 容器内 5432（用 5433 避开本机可能占用的 5432）
+    volumes:
+      - rag_pgdata:/var/lib/postgresql/data   # 数据持久化，容器删了数据还在
+
+volumes:
+  rag_pgdata:

@@ -1,0 +1,358 @@
+{
+ "total": 20,
+ "skipped": 0,
+ "corpusFiles": [
+  "vector-db-notes-v2.md",
+  "my-note.txt",
+  "sample.txt"
+ ],
+ "positiveTotal": 16,
+ "negativeTotal": 4,
+ "recallAt3": 1.0,
+ "recallAt1": 1.0,
+ "mrr": 1.0,
+ "refusalRate": 0.5,
+ "recallAt3Text": "100.0%",
+ "recallAt1Text": "100.0%",
+ "refusalRateText": "50.0%",
+ "config": {
+  "hybridEnabled": true,
+  "rerankEnabled": true,
+  "candidateTopK": 10,
+  "finalTopK": 3,
+  "minScore": 0.66,
+  "keywordMinSimilarity": 0.0,
+  "rrfK": 60,
+  "rerankMinScore": 0.0
+ },
+ "details": [
+  {
+   "query": "我是哪个学校的",
+   "expectedFile": "my-note.txt",
+   "shouldAnswer": true,
+   "returnedFiles": [
+    "my-note.txt"
+   ],
+   "returnedScores": [
+    0.1739
+   ],
+   "skipped": false,
+   "rank": 1,
+   "hit": true
+  },
+  {
+   "query": "我的项目用了什么技术栈",
+   "expectedFile": "my-note.txt",
+   "shouldAnswer": true,
+   "returnedFiles": [
+    "my-note.txt",
+    "sample.txt",
+    "vector-db-notes-v2.md"
+   ],
+   "returnedScores": [
+    0.9786,
+    0.0617,
+    0.0006
+   ],
+   "skipped": false,
+   "rank": 1,
+   "hit": true
+  },
+  {
+   "query": "我做过什么上线的项目",
+   "expectedFile": "my-note.txt",
+   "shouldAnswer": true,
+   "returnedFiles": [
+    "my-note.txt",
+    "sample.txt",
+    "vector-db-notes-v2.md"
+   ],
+   "returnedScores": [
+    0.8516,
+    0.0003,
+    0.0
+   ],
+   "skipped": false,
+   "rank": 1,
+   "hit": true
+  },
+  {
+   "query": "这个微信小程序是干什么的",
+   "expectedFile": "my-note.txt",
+   "shouldAnswer": true,
+   "returnedFiles": [
+    "my-note.txt",
+    "vector-db-notes-v2.md",
+    "sample.txt"
+   ],
+   "returnedScores": [
+    0.2306,
+    0.0012,
+    0.0005
+   ],
+   "skipped": false,
+   "rank": 1,
+   "hit": true
+  },
+  {
+   "query": "RAG 是什么",
+   "expectedFile": "sample.txt",
+   "shouldAnswer": true,
+   "returnedFiles": [
+    "sample.txt",
+    "my-note.txt",
+    "sample.txt"
+   ],
+   "returnedScores": [
+    0.992,
+    0.5252,
+    0.0726
+   ],
+   "skipped": false,
+   "rank": 1,
+   "hit": true
+  },
+  {
+   "query": "文档切块大小怎么定",
+   "expectedFile": "sample.txt",
+   "shouldAnswer": true,
+   "returnedFiles": [
+    "sample.txt",
+    "sample.txt",
+    "my-note.txt"
+   ],
+   "returnedScores": [
+    0.3954,
+    0.0399,
+    0.0136
+   ],
+   "skipped": false,
+   "rank": 1,
+   "hit": true
+  },
+  {
+   "query": "为什么向量维度必须保持一致",
+   "expectedFile": "sample.txt",
+   "shouldAnswer": true,
+   "returnedFiles": [
+    "sample.txt",
+    "vector-db-notes-v2.md",
+    "vector-db-notes-v2.md"
+   ],
+   "returnedScores": [
+    0.9942,
+    0.0312,
+    0.0016
+   ],
+   "skipped": false,
+   "rank": 1,
+   "hit": true
+  },
+  {
+   "query": "向量数据库和关系数据库有什么区别",
+   "expectedFile": "vector-db-notes-v2.md",
+   "shouldAnswer": true,
+   "returnedFiles": [
+    "vector-db-notes-v2.md",
+    "sample.txt",
+    "sample.txt"
+   ],
+   "returnedScores": [
+    0.9899,
+    0.055,
+    0.0168
+   ],
+   "skipped": false,
+   "rank": 1,
+   "hit": true
+  },
+  {
+   "query": "怎么在召回率和速度之间做权衡",
+   "expectedFile": "vector-db-notes-v2.md",
+   "shouldAnswer": true,
+   "returnedFiles": [
+    "vector-db-notes-v2.md",
+    "sample.txt",
+    "vector-db-notes-v2.md"
+   ],
+   "returnedScores": [
+    0.5695,
+    0.0018,
+    0.0016
+   ],
+   "skipped": false,
+   "rank": 1,
+   "hit": true
+  },
+  {
+   "query": "IVFFlat 和 HNSW 应该怎么选",
+   "expectedFile": "vector-db-notes-v2.md",
+   "shouldAnswer": true,
+   "returnedFiles": [
+    "vector-db-notes-v2.md",
+    "vector-db-notes-v2.md",
+    "sample.txt"
+   ],
+   "returnedScores": [
+    0.9825,
+    0.0012,
+    0.0001
+   ],
+   "skipped": false,
+   "rank": 1,
+   "hit": true
+  },
+  {
+   "query": "检索之后为什么还要做一层重排序",
+   "expectedFile": "vector-db-notes-v2.md",
+   "shouldAnswer": true,
+   "returnedFiles": [
+    "vector-db-notes-v2.md",
+    "sample.txt",
+    "sample.txt"
+   ],
+   "returnedScores": [
+    0.9766,
+    0.0412,
+    0.0057
+   ],
+   "skipped": false,
+   "rank": 1,
+   "hit": true
+  },
+  {
+   "query": "Qwen3-Embedding-0.6B 输出多少维",
+   "expectedFile": "sample.txt",
+   "shouldAnswer": true,
+   "returnedFiles": [
+    "sample.txt",
+    "vector-db-notes-v2.md",
+    "my-note.txt"
+   ],
+   "returnedScores": [
+    0.9993,
+    0.0233,
+    0.01
+   ],
+   "skipped": false,
+   "rank": 1,
+   "hit": true
+  },
+  {
+   "query": "rag_segments 是什么表",
+   "expectedFile": "sample.txt",
+   "shouldAnswer": true,
+   "returnedFiles": [
+    "sample.txt",
+    "sample.txt",
+    "my-note.txt"
+   ],
+   "returnedScores": [
+    0.9654,
+    0.2242,
+    0.0026
+   ],
+   "skipped": false,
+   "rank": 1,
+   "hit": true
+  },
+  {
+   "query": "vector_cosine_ops 是什么",
+   "expectedFile": "vector-db-notes-v2.md",
+   "shouldAnswer": true,
+   "returnedFiles": [
+    "vector-db-notes-v2.md",
+    "vector-db-notes-v2.md",
+    "sample.txt"
+   ],
+   "returnedScores": [
+    0.6013,
+    0.0007,
+    0.0001
+   ],
+   "skipped": false,
+   "rank": 1,
+   "hit": true
+  },
+  {
+   "query": "pgvector 的 probes 参数是干什么的",
+   "expectedFile": "vector-db-notes-v2.md",
+   "shouldAnswer": true,
+   "returnedFiles": [
+    "vector-db-notes-v2.md",
+    "my-note.txt",
+    "sample.txt"
+   ],
+   "returnedScores": [
+    0.7081,
+    0.0248,
+    0.0113
+   ],
+   "skipped": false,
+   "rank": 1,
+   "hit": true
+  },
+  {
+   "query": "精灵小窝是什么",
+   "expectedFile": "my-note.txt",
+   "shouldAnswer": true,
+   "returnedFiles": [
+    "my-note.txt"
+   ],
+   "returnedScores": [
+    0.958
+   ],
+   "skipped": false,
+   "rank": 1,
+   "hit": true
+  },
+  {
+   "query": "今天天气怎么样",
+   "expectedFile": null,
+   "shouldAnswer": false,
+   "returnedFiles": [],
+   "returnedScores": [],
+   "skipped": false,
+   "refused": true
+  },
+  {
+   "query": "推荐一部电影",
+   "expectedFile": null,
+   "shouldAnswer": false,
+   "returnedFiles": [
+    "vector-db-notes-v2.md"
+   ],
+   "returnedScores": [
+    0.0008
+   ],
+   "skipped": false,
+   "refused": false
+  },
+  {
+   "query": "怎么炒西红柿鸡蛋",
+   "expectedFile": null,
+   "shouldAnswer": false,
+   "returnedFiles": [],
+   "returnedScores": [],
+   "skipped": false,
+   "refused": true
+  },
+  {
+   "query": "Python 的 GIL 是什么",
+   "expectedFile": null,
+   "shouldAnswer": false,
+   "returnedFiles": [
+    "vector-db-notes-v2.md",
+    "sample.txt",
+    "my-note.txt"
+   ],
+   "returnedScores": [
+    0.0014,
+    0.0012,
+    0.0002
+   ],
+   "skipped": false,
+   "refused": false
+  }
+ ]
+}

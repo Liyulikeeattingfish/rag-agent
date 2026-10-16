@@ -1,0 +1,20 @@
+# =============================================================================
+# 本地私密配置模板
+#
+# 用法：把本文件复制为 application-local.yml，填入真实 key 即可。
+#
+#   cp application-local.yml.example application-local.yml
+#
+# application-local.yml 已被 .gitignore 忽略，并且会被 application.yml 里的
+# spring.profiles.active=local 自动加载 —— 本地直接启动就行，不需要设系统环境变量。
+#
+# 为什么可以安全地不提交：application.yml 里的 api-key 写成了 ${DEEPSEEK_API_KEY:}，
+# 冒号后面是【空默认值】。所以这个文件缺失时应用照样能启动，只是调用
+# DeepSeek / 硅基流动 时会因为拿不到 key 而失败 —— 属于"配置缺失"，不是"崩溃"。
+# =============================================================================
+
+deepseek:
+  api-key: sk-在这里填入你的DeepSeek密钥
+
+siliconflow:
+  api-key: sk-在这里填入你的硅基流动密钥

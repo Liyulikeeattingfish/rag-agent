@@ -1,0 +1,57 @@
+server:
+  port: 8081
+
+spring:
+  # local profile：自动加载同目录下的 application-local.yml（已 gitignore，存放真实密钥）。
+  # 该文件缺失时应用依然能启动，只是调用 DeepSeek / 硅基流动会因拿不到 key 而失败 ——
+  # 这属于"配置缺失"，不是"崩溃"。
+  profiles:
+    active: local
+
+  # PostgreSQL + pgvector（本地 Docker，宿主机端口 5433）
+  datasource:
+    url: jdbc:postgresql://localhost:5433/ragdb
+    username: ragagent
+    password: ragagent123
+    driver-class-name: org.postgresql.Driver
+  servlet:
+    multipart:
+      max-file-size: 10MB       # 单个上传文件大小上限
+      max-request-size: 10MB    # 整个 multipart 请求大小上限
+
+# DeepSeek 大模型配置（聊天用）
+# 密钥不写在这里：application.yml 是要提交的，真实密钥放 application-local.yml 或环境变量。
+deepseek:
+  api-key: ${DEEPSEEK_API_KEY:}
+  base-url: https://api.deepseek.com
+  model: deepseek-chat
+
+# 硅基流动模型配置（embedding 入库 + rerank 精排）
+# base-url 必须带 /v1（OpenAI 兼容路径）
+siliconflow:
+  api-key: ${SILICONFLOW_API_KEY:}
+  base-url: https://api.siliconflow.cn/v1
+  model: Qwen/Qwen3-Embedding-0.6B
+  dimension: 1024
+
+# ---------------------------------------------------------------------------
+# RAG 检索参数（每个取值的理由都写在 config/RetrievalProperties 的注释里）
+#
+# 下面列出的就是四档消融标定后的最优值，与字段默认值完全一致 —— 整块删掉也能跑，
+# 写出来是为了让"当前生效的配置"在文件里一眼可见。
+# 注意启动参数的优先级高于本文件，四档消融对比就是靠 --rag.retrieval.* 覆盖做出来的。
+# 实测报告：docs/eval/RETRIEVAL-EVAL-REPORT.md
+# ---------------------------------------------------------------------------
+rag:
+  retrieval:
+    min-score: 0.66                 # 向量分闸门；pgvector 的 score=(1+余弦)/2，0.66 ≈ cos 0.32
+    vector-top-k: 10                # 向量通道粗召回条数
+    keyword-top-k: 10               # pg_trgm 通道粗召回条数
+    keyword-min-similarity: 0.0     # 严格大于 0：只要求"至少共享一个三元组"
+    candidate-top-k: 10             # RRF 融合后交给精排的候选条数
+    final-top-k: 3                  # 最终喂给大模型的段落数
+    rrf-k: 60                       # RRF 常数 k，score(d) = Σ 1/(k+rank)
+    hybrid-enabled: true            # 关掉即退回纯向量召回（消融档 1 用）
+    rerank-enabled: true            # 关掉即退回 RRF 排序（消融档 2 用）
+    rerank-model: BAAI/bge-reranker-v2-m3
+    rerank-min-score: 0.05          # 精排闸门，标定过程见上面那份报告

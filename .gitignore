@@ -1,0 +1,25 @@
+### Local private config (contains real secrets - NEVER commit) ###
+application-local.yml
+application-local.yaml
+*.bak
+
+### Local tooling / agent data ###
+.workbuddy/
+
+HELP.md
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+
+### VS Code ###
+.vscode/
+
+### Windows ###
+Thumbs.db
