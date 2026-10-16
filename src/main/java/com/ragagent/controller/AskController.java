@@ -1,8 +1,7 @@
 package com.ragagent.controller;
 
 import com.ragagent.rag.RetrievedSegment;
-import com.ragagent.service.RetrievalService;
-import dev.langchain4j.model.chat.ChatModel;
+import com.ragagent.service.AnswerService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -15,9 +14,9 @@ import java.util.Map;
 /**
  * 检索问答接口（RAG 的读取侧）。
  *
- * 本类现在只做两件事：调检索、拼 prompt。所有检索的复杂度（混合召回 / RRF / 精排）
- * 都下沉到了 RetrievalService —— Controller 里写检索算法是上一版的事，
- * 现在检索逻辑要被 /ask 和 /eval 同时复用，再放在 Controller 里就会变成复制粘贴。
+ * 本类现在只做两件事：调 AnswerService、把结果拼成 HTTP 响应。
+ * 检索与生成都在 Service 里 —— 因为 /eval-answer 必须复用同一条回答链路，
+ * 逻辑留在 Controller 里就会变成两份实现，评出来的就不是线上跑的东西。
  *
  * 用法：GET /ask?question=RAG是什么
  *
@@ -30,41 +29,21 @@ import java.util.Map;
 @RestController
 public class AskController {
 
-    /** 检索不到够格资料时的固定话术，与 prompt 里的要求保持一致（这行字本身不改判分逻辑）。 */
-    private static final String NO_ANSWER = "资料中没有相关内容";
+    private final AnswerService answerService;
 
-    private static final String INSTRUCTION =
-            "你是一个知识库问答助手。只能根据下面提供的【参考资料】回答用户问题。"
-                    + "如果参考资料里没有相关信息，必须直接回答'资料中没有相关内容'，严禁自己编造或凭常识补充。";
-
-    private final RetrievalService retrievalService;
-    private final ChatModel chatModel;
-
-    public AskController(RetrievalService retrievalService, ChatModel chatModel) {
-        this.retrievalService = retrievalService;
-        this.chatModel = chatModel;
+    public AskController(AnswerService answerService) {
+        this.answerService = answerService;
     }
 
     @GetMapping("/ask")
     public Map<String, Object> ask(@RequestParam("question") String question) {
-        // 1. 混合召回 → RRF → 精排 → topN（全部在 RetrievalService 里，含各种开关与降级）
-        List<RetrievedSegment> hits = retrievalService.retrieve(question);
+        AnswerService.AnswerResult result = answerService.answer(question);
 
-        // 2. 一条都没过闸 → 直接拒答，不把不相关的资料塞给大模型
-        if (hits.isEmpty()) {
-            Map<String, Object> nothing = new LinkedHashMap<>();
-            nothing.put("answer", NO_ANSWER);
-            nothing.put("retrieved", List.of());
-            nothing.put("sources", List.of());
-            nothing.put("rerankUsed", false);
-            return nothing;
-        }
-
-        List<String> retrieved = new ArrayList<>(hits.size());
-        List<Map<String, Object>> sources = new ArrayList<>(hits.size());
+        List<String> retrieved = new ArrayList<>(result.hits().size());
+        List<Map<String, Object>> sources = new ArrayList<>(result.hits().size());
         boolean rerankUsed = false;
 
-        for (RetrievedSegment hit : hits) {
+        for (RetrievedSegment hit : result.hits()) {
             retrieved.add(hit.text());
             if (hit.rerankScore() != null) {
                 rerankUsed = true;
@@ -83,25 +62,12 @@ public class AskController {
             sources.add(source);
         }
 
-        // 3. 只把最终候选拼进 prompt
-        String answer = chatModel.chat(buildPrompt(retrieved, question));
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("answer", answer);
-        result.put("retrieved", retrieved);
-        result.put("sources", sources);
-        result.put("rerankUsed", rerankUsed);
-        return result;
-    }
-
-    private String buildPrompt(List<String> retrieved, String question) {
-        StringBuilder refs = new StringBuilder();
-        for (int i = 0; i < retrieved.size(); i++) {
-            refs.append(i + 1).append(". ").append(retrieved.get(i)).append("\n");
-        }
-        return INSTRUCTION
-                + "\n\n【参考资料】\n" + refs
-                + "\n【问题】\n" + question;
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("answer", result.answer());
+        response.put("retrieved", retrieved);
+        response.put("sources", sources);
+        response.put("rerankUsed", rerankUsed);
+        return response;
     }
 
     private static Double round4(Double value) {

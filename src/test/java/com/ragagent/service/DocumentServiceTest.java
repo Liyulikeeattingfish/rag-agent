@@ -1,5 +1,6 @@
 package com.ragagent.service;
 
+import com.ragagent.rag.KeywordChannel;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -22,6 +23,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -41,12 +43,14 @@ class DocumentServiceTest {
     private EmbeddingStore<TextSegment> embeddingStore;
     @Mock
     private JdbcTemplate jdbcTemplate;
+    @Mock
+    private KeywordChannel keywordChannel;
 
     private DocumentService service;
 
     @BeforeEach
     void setUp() {
-        service = new DocumentService(embeddingModel, embeddingStore, jdbcTemplate);
+        service = new DocumentService(embeddingModel, embeddingStore, jdbcTemplate, keywordChannel);
     }
 
     /** 两个 COUNT 查询走的是同一个方法，只能按 SQL 内容区分谁是谁。 */
@@ -77,6 +81,8 @@ class DocumentServiceTest {
         assertThat(result.get("success")).isEqualTo(false);
         verify(embeddingStore, never()).addAll(anyList(), anyList());
         verify(embeddingStore, never()).removeAll(any(Filter.class));
+        // 没写库就不该让缓存失效，否则重复上传会白白重建一次倒排索引
+        verify(keywordChannel, never()).invalidate();
     }
 
     @Test
@@ -106,6 +112,9 @@ class DocumentServiceTest {
         assertThat(result.get("segments")).isEqualTo(1);
         verify(embeddingStore).removeAll(any(Filter.class));
         verify(embeddingStore).addAll(anyList(), anyList());
+        // 语料变了，关键词通道的缓存必须作废，否则新内容搜不到（且不会报错）。
+        // 覆盖路径会失效两次（删除时一次、写入后一次）—— 失效是幂等的置空操作，重复调用无副作用。
+        verify(keywordChannel, atLeastOnce()).invalidate();
     }
 
     @Test

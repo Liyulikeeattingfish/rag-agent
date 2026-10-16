@@ -1,7 +1,8 @@
 package com.ragagent.service;
 
 import com.ragagent.config.RetrievalProperties;
-import com.ragagent.rag.KeywordSearcher;
+import com.ragagent.rag.KeywordChannel;
+import com.ragagent.rag.KeywordHit;
 import com.ragagent.rag.RagMetadataKeys;
 import com.ragagent.rag.RetrievedSegment;
 import dev.langchain4j.data.document.Metadata;
@@ -49,7 +50,7 @@ class RetrievalServiceTest {
     @Mock
     private EmbeddingStore<TextSegment> embeddingStore;
     @Mock
-    private KeywordSearcher keywordSearcher;
+    private KeywordChannel keywordChannel;
     @Mock
     private RerankClient rerankClient;
 
@@ -59,7 +60,7 @@ class RetrievalServiceTest {
     @BeforeEach
     void setUp() {
         properties = new RetrievalProperties();
-        service = new RetrievalService(embeddingModel, embeddingStore, keywordSearcher, rerankClient, properties);
+        service = new RetrievalService(embeddingModel, embeddingStore, keywordChannel, rerankClient, properties);
         when(embeddingModel.embed(anyString())).thenReturn(Response.from(Embedding.from(new float[]{0.1f, 0.2f})));
     }
 
@@ -80,8 +81,8 @@ class RetrievalServiceTest {
                 .thenReturn(new EmbeddingSearchResult<>(List.of(matches)));
     }
 
-    private void stubKeyword(KeywordSearcher.KeywordHit... hits) {
-        when(keywordSearcher.search(anyString(), anyInt(), anyDouble())).thenReturn(List.of(hits));
+    private void stubKeyword(KeywordHit... hits) {
+        when(keywordChannel.search(anyString(), anyInt(), anyDouble())).thenReturn(List.of(hits));
     }
 
     // ------------------------------------------------------------------
@@ -95,8 +96,8 @@ class RetrievalServiceTest {
         // 向量通道：x 第 1、y 第 2
         stubVector(match("x.txt", 0, 0.80, "x 的正文"), match("y.txt", 0, 0.75, "y 的正文"));
         // 关键词通道：y 第 1、z 第 2
-        stubKeyword(new KeywordSearcher.KeywordHit("y 的正文", "y.txt", 0, 0.09),
-                new KeywordSearcher.KeywordHit("z 的正文", "z.txt", 0, 0.02));
+        stubKeyword(new KeywordHit("y 的正文", "y.txt", 0, 0.09),
+                new KeywordHit("z 的正文", "z.txt", 0, 0.02));
 
         List<RetrievedSegment> result = service.retrieve("问题");
 
@@ -195,7 +196,7 @@ class RetrievalServiceTest {
         assertThat(captor.getValue().maxResults()).isEqualTo(properties.getFinalTopK());
         assertThat(captor.getValue().minScore()).isEqualTo(properties.getMinScore());
 
-        verify(keywordSearcher, never()).search(anyString(), anyInt(), anyDouble());
+        verify(keywordChannel, never()).search(anyString(), anyInt(), anyDouble());
         verify(rerankClient, never()).rerank(anyString(), anyList());
     }
 

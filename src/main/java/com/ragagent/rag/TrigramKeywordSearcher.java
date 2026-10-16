@@ -1,12 +1,13 @@
 package com.ragagent.rag;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 
 /**
- * 关键词检索通道（pg_trgm 三元组相似度）。
+ * 关键词通道之一：pg_trgm 三元组相似度。
  *
  * 为什么在有了向量检索之后还要这一路：
  * 向量检索擅长"语义相近"，但恰恰不擅长"字面精确相等"。问「vector_cosine_ops 是什么」、
@@ -19,20 +20,23 @@ import java.util.List;
  *   （它读的是 pg_trgm.similarity_threshold 这个 GUC）。而本类用的是
  *   similarity(text, ?) >= ? 这种"算出分数再比较"的写法 —— 它能得到精确可控的分数，
  *   但过滤条件对索引不友好，走的是顺序扫描。
- * 本项目语料只有几十个片段，顺序扫描完全够用；真到百万级片段时，正确做法是改成
+ *   本项目语料只有几十个片段，顺序扫描完全够用；真到百万级片段时，正确做法是改成
  *   WHERE text % ? ORDER BY similarity(text, ?) DESC LIMIT ?
- * 并给会话设 SET LOCAL pg_trgm.similarity_threshold = 0 —— 这样 GIN 索引才会真正被用上。
- * 索引还是按计划建了，因为上面这条演进路径的起点就是它。
+ *   并给会话设 SET LOCAL pg_trgm.similarity_threshold = 0 —— 这样 GIN 索引才会真正被用上。
+ *
+ * 上线方式：rag.retrieval.keyword-channel 缺省或等于 trigram 时启用本实现。
  */
 @Component
-public class KeywordSearcher {
+@ConditionalOnProperty(prefix = "rag.retrieval", name = "keyword-channel",
+        havingValue = "trigram", matchIfMissing = true)
+public class TrigramKeywordSearcher implements KeywordChannel {
 
     /** 与 EmbeddingConfig 建表、DocumentService 查重用的表名保持一致。 */
     private static final String TABLE = "rag_segments";
 
     private final JdbcTemplate jdbcTemplate;
 
-    public KeywordSearcher(JdbcTemplate jdbcTemplate) {
+    public TrigramKeywordSearcher(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
@@ -43,15 +47,16 @@ public class KeywordSearcher {
      * @param limit         取几条
      * @param minSimilarity 相似度下限（严格大于）；0.0 表示只要求有交集
      */
+    @Override
     public List<KeywordHit> search(String query, int limit, double minSimilarity) {
         String sql = """
                 SELECT text                                  AS text,
                        metadata->>'file_name'                AS file_name,
                        NULLIF(metadata->>'index', '')::int   AS segment_index,
-                       similarity(text, ?)                   AS similarity
+                       similarity(text, ?)                   AS score
                 FROM %s
                 WHERE similarity(text, ?) > ?
-                ORDER BY similarity DESC
+                ORDER BY score DESC
                 LIMIT ?
                 """.formatted(TABLE);
 
@@ -59,11 +64,7 @@ public class KeywordSearcher {
                 rs.getString("text"),
                 rs.getString("file_name"),
                 (Integer) rs.getObject("segment_index"),
-                rs.getDouble("similarity")
+                rs.getDouble("score")
         ), query, query, minSimilarity, limit);
-    }
-
-    /** 一条关键词命中：片段原文 + 来源文档身份 + trigram 相似度。 */
-    public record KeywordHit(String text, String fileName, Integer segmentIndex, double similarity) {
     }
 }

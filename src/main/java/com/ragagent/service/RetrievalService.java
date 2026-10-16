@@ -1,7 +1,8 @@
 package com.ragagent.service;
 
 import com.ragagent.config.RetrievalProperties;
-import com.ragagent.rag.KeywordSearcher;
+import com.ragagent.rag.KeywordChannel;
+import com.ragagent.rag.KeywordHit;
 import com.ragagent.rag.RagMetadataKeys;
 import com.ragagent.rag.RetrievedSegment;
 import dev.langchain4j.data.embedding.Embedding;
@@ -58,18 +59,18 @@ public class RetrievalService {
 
     private final EmbeddingModel embeddingModel;
     private final EmbeddingStore<TextSegment> embeddingStore;
-    private final KeywordSearcher keywordSearcher;
+    private final KeywordChannel keywordChannel;
     private final RerankClient rerankClient;
     private final RetrievalProperties properties;
 
     public RetrievalService(EmbeddingModel embeddingModel,
                             EmbeddingStore<TextSegment> embeddingStore,
-                            KeywordSearcher keywordSearcher,
+                            KeywordChannel keywordChannel,
                             RerankClient rerankClient,
                             RetrievalProperties properties) {
         this.embeddingModel = embeddingModel;
         this.embeddingStore = embeddingStore;
-        this.keywordSearcher = keywordSearcher;
+        this.keywordChannel = keywordChannel;
         this.rerankClient = rerankClient;
         this.properties = properties;
     }
@@ -122,13 +123,13 @@ public class RetrievalService {
 
         List<Candidate> keywordHits = List.of();
         if (properties.isHybridEnabled()) {
-            keywordHits = keywordChannel(question);
+            keywordHits = keywordCandidates(question);
         }
 
         List<Candidate> fused = fuseByRrf(vectorHits, keywordHits);
 
-        log.info("[retrieval] Q={} 粗召回：向量 {} 条 / 关键词 {} 条 → RRF 融合后取 {} 条候选",
-                question, vectorHits.size(), keywordHits.size(), fused.size());
+        log.info("[retrieval] Q={} 粗召回：向量 {} 条 / 关键词({}) {} 条 → RRF 融合后取 {} 条候选",
+                question, vectorHits.size(), properties.getKeywordChannel(), keywordHits.size(), fused.size());
         return fused;
     }
 
@@ -163,14 +164,14 @@ public class RetrievalService {
         return hits;
     }
 
-    private List<Candidate> keywordChannel(String question) {
-        List<KeywordSearcher.KeywordHit> hits = keywordSearcher.search(
+    private List<Candidate> keywordCandidates(String question) {
+        List<KeywordHit> hits = keywordChannel.search(
                 question, properties.getKeywordTopK(), properties.getKeywordMinSimilarity());
 
         List<Candidate> candidates = new ArrayList<>(hits.size());
-        for (KeywordSearcher.KeywordHit hit : hits) {
+        for (KeywordHit hit : hits) {
             Candidate candidate = new Candidate(hit.text(), hit.fileName(), hit.segmentIndex());
-            candidate.keywordScore = hit.similarity();
+            candidate.keywordScore = hit.score();
             candidates.add(candidate);
         }
         return candidates;

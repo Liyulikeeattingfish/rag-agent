@@ -40,7 +40,7 @@ siliconflow:
 # 下面列出的就是四档消融标定后的最优值，与字段默认值完全一致 —— 整块删掉也能跑，
 # 写出来是为了让"当前生效的配置"在文件里一眼可见。
 # 注意启动参数的优先级高于本文件，四档消融对比就是靠 --rag.retrieval.* 覆盖做出来的。
-# 实测报告：docs/eval/RETRIEVAL-EVAL-REPORT.md
+# 实测报告：docs/eval/EVAL-REPORT.md
 # ---------------------------------------------------------------------------
 rag:
   retrieval:
@@ -54,7 +54,7 @@ rag:
     hybrid-enabled: true            # 关掉即退回纯向量召回（消融档 1 用）
     rerank-enabled: true            # 关掉即退回 RRF 排序（消融档 2 用）
     rerank-model: BAAI/bge-reranker-v2-m3
-    rerank-min-score: 0.05          # 精排闸门，标定过程见上面那份报告
+    rerank-min-score: 0.05          # 精排闸门，标定过程见 docs/eval/EVAL-REPORT.md
 
 # ---------------------------------------------------------------------------
 # Agent 工具调用参数（/agent）

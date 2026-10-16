@@ -46,6 +46,17 @@ public class RetrievalProperties {
      */
     private double keywordMinSimilarity = 0.0;
 
+    /**
+     * 关键词通道用哪个实现：
+     *   TRIGRAM —— pg_trgm 字符三元组相似度，直接查库，无需维护索引
+     *   BM25    —— 内存倒排索引 + IDF + 词频饱和 + 长度归一化，中文按二元组近似分词
+     * 二者是同一位置的可替换实现，用于在同一套评测集上做 A/B 对比。
+     */
+    private KeywordChannelMode keywordChannel = KeywordChannelMode.TRIGRAM;
+
+    /** 关键词通道的实现选择。对应配置项 rag.retrieval.keyword-channel。 */
+    public enum KeywordChannelMode { TRIGRAM, BM25 }
+
     /** RRF 融合后保留的候选条数，也就是交给 rerank 的条数（粗召回候选集大小）。 */
     private int candidateTopK = 10;
 
@@ -173,5 +184,13 @@ public class RetrievalProperties {
 
     public void setRerankMinScore(double rerankMinScore) {
         this.rerankMinScore = rerankMinScore;
+    }
+
+    public KeywordChannelMode getKeywordChannel() {
+        return keywordChannel;
+    }
+
+    public void setKeywordChannel(KeywordChannelMode keywordChannel) {
+        this.keywordChannel = keywordChannel;
     }
 }

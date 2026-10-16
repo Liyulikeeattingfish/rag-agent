@@ -1,5 +1,6 @@
 package com.ragagent.service;
 
+import com.ragagent.rag.KeywordChannel;
 import com.ragagent.rag.RagMetadataKeys;
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentSplitter;
@@ -43,12 +44,20 @@ public class DocumentService {
     private final EmbeddingStore<TextSegment> embeddingStore;
     private final JdbcTemplate jdbcTemplate;
 
+    /**
+     * 关键词通道。入库和删除之后必须让它作废缓存 —— 否则内存型实现（BM25）会一直用旧语料，
+     * 表现为"刚上传的文档搜不到"，而且不会报错。
+     */
+    private final KeywordChannel keywordChannel;
+
     public DocumentService(EmbeddingModel embeddingModel,
                            EmbeddingStore<TextSegment> embeddingStore,
-                           JdbcTemplate jdbcTemplate) {
+                           JdbcTemplate jdbcTemplate,
+                           KeywordChannel keywordChannel) {
         this.embeddingModel = embeddingModel;
         this.embeddingStore = embeddingStore;
         this.jdbcTemplate = jdbcTemplate;
+        this.keywordChannel = keywordChannel;
     }
 
     /**
@@ -110,6 +119,7 @@ public class DocumentService {
         // 调硅基流动 embedding 转向量，然后写入 pgvector
         List<Embedding> embeddings = embeddingModel.embedAll(segments).content();
         List<String> ids = embeddingStore.addAll(embeddings, segments);
+        keywordChannel.invalidate();
 
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("status", isNewVersion ? "updated" : "created");
@@ -181,6 +191,7 @@ public class DocumentService {
         }
         embeddingStore.removeAll(
                 MetadataFilterBuilder.metadataKey(RagMetadataKeys.FILE_NAME).isEqualTo(fileName));
+        keywordChannel.invalidate();
         return before;
     }
 

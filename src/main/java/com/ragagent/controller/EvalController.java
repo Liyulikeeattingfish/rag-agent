@@ -1,6 +1,9 @@
 package com.ragagent.controller;
 
 import com.ragagent.config.RetrievalProperties;
+import com.ragagent.eval.EvalCase;
+import com.ragagent.eval.EvalCaseSet;
+import com.ragagent.rag.RetrievalMetrics;
 import com.ragagent.rag.RetrievedSegment;
 import com.ragagent.service.DocumentService;
 import com.ragagent.service.RetrievalService;
@@ -27,8 +30,10 @@ import java.util.Set;
  *                Recall 只看有没有，MRR 还能看出"从第 3 名提到第 1 名"这种进步，
  *                在语料很小、Recall 容易饱和的场景里，MRR 才是真正能分辨优劣的指标。
  *   拒答率    —— 无关用例中，最终上下文为空（系统拒答）的比例。衡量"会不会硬答"。
+ *   nDCG@3    —— 折损累计增益，同样看位置但带对数折损。单相关文档 0/1 标注下退化为
+ *                1/log2(rank+1)。加它是因为"nDCG 涨了多少"是面试里的标准问法，口径得对得上。
  *
- * 一个刻意的设计：评测【不调用大模型】。这三个指标全是"检索层能不能排对"，
+ * 一个刻意的设计：评测【不调用大模型】。这几个指标全是"检索层能不能排对"，
  * 跟大模型会不会胡说八道是两件事。把 LLM 拿出去之后，跑一次评测只要几十次 embedding
  * 调用，几秒钟出结果，可以随便跑；掺进 LLM 就变成又慢又贵又不可重复了。
  *
@@ -41,52 +46,13 @@ import java.util.Set;
 public class EvalController {
 
     /**
-     * 一条评测用例。
-     *
-     * @param query        问题
-     * @param expectedFile 期望被排进 top3 的文档文件名；无关用例为 null
-     * @param shouldAnswer true=语料里有答案；false=无关问题，期望系统拒答
+     * 用例集见 EvalCaseSet —— 检索侧（/eval）和生成侧（/eval-answer）跑的是同一套用例，
+     * 否则两边的数字对不上，也没法得出"检索对了但答案不忠实"这类组合结论。
      */
-    private record EvalCase(String query, String expectedFile, boolean shouldAnswer) {
-    }
+    private static final List<EvalCase> CASES = EvalCaseSet.CASES;
 
-    /**
-     * 用例集（20 条，覆盖三类）：
-     *   (a) 普通语义问题 —— 考察向量通道的语义泛化能力（问法和原文措辞不同）
-     *   (b) 精确关键词问题 —— 考察关键词通道，这类问题里"某个 token 原样出现"才是硬条件，
-     *       纯向量检索最容易在这里翻车，混合检索的价值也主要体现在这里
-     *   (c) 无关问题 —— 考察拒答能力，防止"问什么都能答"
-     *
-     * 注意：expectedFile 必须与已入库的真实文件名完全一致。改名、删除文档之后
-     * 这些用例会被自动跳过（返回体里的 skipped 字段会说明），不会静默变成假失败。
-     */
-    private static final List<EvalCase> CASES = List.of(
-            // ---- (a) 普通语义问题 ----
-            new EvalCase("我是哪个学校的", "my-note.txt", true),
-            new EvalCase("我的项目用了什么技术栈", "my-note.txt", true),
-            new EvalCase("我做过什么上线的项目", "my-note.txt", true),
-            new EvalCase("这个微信小程序是干什么的", "my-note.txt", true),
-            new EvalCase("RAG 是什么", "sample.txt", true),
-            new EvalCase("文档切块大小怎么定", "sample.txt", true),
-            new EvalCase("为什么向量维度必须保持一致", "sample.txt", true),
-            new EvalCase("向量数据库和关系数据库有什么区别", "vector-db-notes-v2.md", true),
-            new EvalCase("怎么在召回率和速度之间做权衡", "vector-db-notes-v2.md", true),
-            new EvalCase("IVFFlat 和 HNSW 应该怎么选", "vector-db-notes-v2.md", true),
-            new EvalCase("检索之后为什么还要做一层重排序", "vector-db-notes-v2.md", true),
-
-            // ---- (b) 只有精确关键词才能命中的问题 ----
-            new EvalCase("Qwen3-Embedding-0.6B 输出多少维", "sample.txt", true),
-            new EvalCase("rag_segments 是什么表", "sample.txt", true),
-            new EvalCase("vector_cosine_ops 是什么", "vector-db-notes-v2.md", true),
-            new EvalCase("pgvector 的 probes 参数是干什么的", "vector-db-notes-v2.md", true),
-            new EvalCase("精灵小窝是什么", "my-note.txt", true),
-
-            // ---- (c) 无关问题（期望拒答） ----
-            new EvalCase("今天天气怎么样", null, false),
-            new EvalCase("推荐一部电影", null, false),
-            new EvalCase("怎么炒西红柿鸡蛋", null, false),
-            new EvalCase("Python 的 GIL 是什么", null, false)
-    );
+    /** 评测的检索窗口：与 finalTopK 对齐，Recall@k / nDCG@k 里的 k 都是它。 */
+    private static final int EVAL_TOP_K = 3;
 
     private final RetrievalService retrievalService;
     private final DocumentService documentService;
@@ -110,6 +76,7 @@ public class EvalController {
         int recallHit = 0;          // 期望文档进了 top3
         int top1Hit = 0;            // 期望文档就在第 1 名（顺带统计，看精排有没有把答案顶上去）
         double reciprocalRankSum = 0;
+        double ndcgSum = 0;
         int refused = 0;            // 无关用例中，系统在检索层就拒答了
 
         List<Map<String, Object>> details = new ArrayList<>(CASES.size());
@@ -150,13 +117,7 @@ public class EvalController {
             if (evalCase.shouldAnswer()) {
                 positiveTotal++;
 
-                int rank = 0;
-                for (int i = 0; i < files.size(); i++) {
-                    if (evalCase.expectedFile().equals(files.get(i))) {
-                        rank = i + 1;
-                        break;
-                    }
-                }
+                int rank = RetrievalMetrics.rankOf(files, evalCase.expectedFile());
                 boolean hit = rank > 0;
                 if (hit) {
                     recallHit++;
@@ -164,7 +125,8 @@ public class EvalController {
                 if (rank == 1) {
                     top1Hit++;
                 }
-                reciprocalRankSum += hit ? 1.0 / rank : 0.0;
+                reciprocalRankSum += RetrievalMetrics.reciprocalRank(rank);
+                ndcgSum += RetrievalMetrics.ndcgAtK(rank, EVAL_TOP_K);
 
                 detail.put("rank", rank == 0 ? null : rank);
                 detail.put("hit", hit);
@@ -193,11 +155,13 @@ public class EvalController {
         double recallAt3 = positiveTotal == 0 ? 0 : (double) recallHit / positiveTotal;
         double recallAt1 = positiveTotal == 0 ? 0 : (double) top1Hit / positiveTotal;
         double mrr = positiveTotal == 0 ? 0 : reciprocalRankSum / positiveTotal;
+        double ndcgAt3 = positiveTotal == 0 ? 0 : ndcgSum / positiveTotal;
         double refusalRate = negativeTotal == 0 ? 0 : (double) refused / negativeTotal;
 
         System.out.println("[eval] ===== 完成：Recall@3=" + pct(recallAt3)
                 + " Recall@1=" + pct(recallAt1)
                 + " MRR=" + String.format("%.4f", mrr)
+                + " nDCG@3=" + String.format("%.4f", ndcgAt3)
                 + " 拒答率=" + pct(refusalRate)
                 + " | 正面 " + positiveTotal + " 条，反面 " + negativeTotal
                 + " 条，跳过 " + skipped + " 条 =====");
@@ -213,6 +177,7 @@ public class EvalController {
         result.put("recallAt3", round4(recallAt3));
         result.put("recallAt1", round4(recallAt1));
         result.put("mrr", round4(mrr));
+        result.put("ndcgAt3", round4(ndcgAt3));
         result.put("refusalRate", round4(refusalRate));
 
         result.put("recallAt3Text", pct(recallAt3));
@@ -228,6 +193,7 @@ public class EvalController {
         config.put("minScore", properties.getMinScore());
         config.put("keywordMinSimilarity", properties.getKeywordMinSimilarity());
         config.put("rrfK", properties.getRrfK());
+        config.put("keywordChannel", properties.getKeywordChannel());
         config.put("rerankMinScore", properties.getRerankMinScore());
         result.put("config", config);
 
